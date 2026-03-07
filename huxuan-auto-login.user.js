@@ -4,6 +4,10 @@
 // @version      1.0.0
 // @description  自动完成互选官网的 QQ 密码登录流程，支持配置账号、密码和目标账户 ID
 // @author       Huxuan AutoLogin
+// @homepageURL  https://greasyfork.org/scripts/568729
+// @supportURL   https://github.com/xiaowulang-turbo/Huxuan-AutoLogin/issues
+// @updateURL    https://raw.githubusercontent.com/xiaowulang-turbo/Huxuan-AutoLogin/main/huxuan-auto-login.user.js
+// @downloadURL  https://raw.githubusercontent.com/xiaowulang-turbo/Huxuan-AutoLogin/main/huxuan-auto-login.user.js
 // @match        https://huxuan.qq.com/*
 // @match        https://test-huxuan.qq.com/*
 // @match        https://pre-huxuan.qq.com/*
