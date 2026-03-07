@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         互选官网自动登录
 // @namespace    https://huxuan.qq.com/
-// @version      1.0.1
+// @version      1.0.3
 // @description  自动完成互选官网的 QQ 密码登录流程，支持配置账号、密码和目标账户 ID
 // @author       Huxuan AutoLogin
-// @homepageURL  https://greasyfork.org/scripts/568729
+// @homepageURL  https://github.com/xiaowulang-turbo/Huxuan-AutoLogin
 // @supportURL   https://github.com/xiaowulang-turbo/Huxuan-AutoLogin/issues
 // @updateURL    https://update.greasyfork.org/scripts/568729.user.js
 // @downloadURL  https://update.greasyfork.org/scripts/568729.user.js
@@ -236,6 +236,44 @@
       #huxuan-auto-login-dialog input.error + .error-hint {
         display: block;
       }
+      #huxuan-auto-login-dialog .password-wrapper {
+        position: relative;
+      }
+      #huxuan-auto-login-dialog .password-wrapper input {
+        padding-right: 36px;
+      }
+      #huxuan-auto-login-dialog .toggle-password {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: #999;
+        line-height: 0;
+        user-select: none;
+        visibility: hidden;
+        opacity: 0;
+        transition: opacity 0.2s, visibility 0.2s;
+      }
+      #huxuan-auto-login-dialog .password-wrapper:hover .toggle-password {
+        visibility: visible;
+        opacity: 0.5;
+      }
+      #huxuan-auto-login-dialog .password-wrapper:hover .toggle-password:hover {
+        visibility: visible;
+        opacity: 1;
+        color: #666;
+      }
+      #huxuan-auto-login-dialog .toggle-password.active {
+        visibility: visible;
+        opacity: 1;
+        color: #1677ff;
+      }
+      @media (prefers-color-scheme: dark) {
+        #huxuan-auto-login-dialog .toggle-password {
+          opacity: 0.6;
+        }
+      }
     `);
 
     const dialog = document.createElement('div');
@@ -251,7 +289,10 @@
           </div>
           <div class="form-group">
             <label class="required">QQ 密码</label>
-            <input type="password" id="hal-password" name="password" autocomplete="current-password" placeholder="请输入密码">
+            <div class="password-wrapper">
+              <input type="password" id="hal-password" name="password" autocomplete="current-password" placeholder="请输入密码">
+              <span class="toggle-password" title="显示/隐藏密码"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
+            </div>
             <div class="error-hint">请输入密码</div>
           </div>
         </form>
@@ -288,6 +329,16 @@
       document.getElementById(id).addEventListener('input', (e) => {
         e.target.classList.remove('error');
       });
+    });
+
+    document.querySelector('.toggle-password').addEventListener('click', function () {
+      const input = document.getElementById('hal-password');
+      const isVisible = input.type === 'text';
+      input.type = isVisible ? 'password' : 'text';
+      this.classList.toggle('active', !isVisible);
+      this.innerHTML = isVisible
+        ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+        : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
     });
 
     dialog.addEventListener('click', (e) => {
