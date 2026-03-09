@@ -13,6 +13,7 @@
 // @match        https://test-huxuan.qq.com/*
 // @match        https://pre-huxuan.qq.com/*
 // @match        https://sso.e.qq.com/*
+// @match        https://tsso.e.qq.com/*
 // @match        https://*.ptlogin2.qq.com/*
 // @match        https://graph.qq.com/*
 // @grant        GM_getValue
@@ -587,7 +588,7 @@
     if (isHuxuanDomain()) {
       await handleHuxuanHome();
       setupAutoCheck();
-    } else if (hostname === 'sso.e.qq.com') {
+    } else if (hostname === 'sso.e.qq.com' || hostname === 'tsso.e.qq.com') {
       if (pathname.startsWith('/login/hub')) {
         await handleSSOLogin();
       } else if (pathname.startsWith('/login/sportal')) {
