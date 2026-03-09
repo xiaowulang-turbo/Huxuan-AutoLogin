@@ -2,7 +2,7 @@
 // @name         互选官网自动登录
 // @namespace    https://huxuan.qq.com/
 // @icon         https://file.daihuo.qq.com/fe_free_trade/favicon.png
-// @version      1.0.4
+// @version      1.0.5
 // @description  自动完成互选官网的 QQ 密码登录流程，支持配置账号、密码和目标账户 ID
 // @author       Huxuan AutoLogin
 // @homepageURL  https://github.com/xiaowulang-turbo/Huxuan-AutoLogin
@@ -520,7 +520,7 @@
   function isLoggedIn() {
     return (
       isHuxuanDomain() &&
-      (pathname.startsWith('/trade/selection') ||
+      (pathname.startsWith('/trade/') ||
         href.includes('account_id='))
     );
   }
