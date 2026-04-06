@@ -2,7 +2,7 @@
 // @name         互选官网自动登录
 // @namespace    https://huxuan.qq.com/
 // @icon         https://file.daihuo.qq.com/fe_free_trade/favicon.png
-// @version      1.0.7
+// @version      1.0.8
 // @description  自动完成互选官网的 QQ 密码登录流程，支持配置账号、密码和目标账户 ID
 // @author       Huxuan AutoLogin
 // @homepageURL  https://github.com/xiaowulang-turbo/Huxuan-AutoLogin
@@ -34,6 +34,29 @@
     CHECK_INTERVAL: 'autoLogin_checkInterval',
     ENABLED: 'autoLogin_enabled',
   };
+
+  const LOCK_KEYS = {
+    LOGIN_FLOW: 'lock_loginFlow',
+    AUTO_CHECK: 'lock_autoCheck',
+  };
+
+  const LOGIN_FLOW_TTL = 2 * 60 * 1000; // 登录流程锁过期时间：2 分钟
+
+  // 使用 sessionStorage 持久化 Tab ID，确保同一 Tab 跨页面跳转时 ID 不变
+  const TAB_ID = (() => {
+    const STORAGE_KEY = 'huxuan_autoLogin_tabId';
+    try {
+      let id = sessionStorage.getItem(STORAGE_KEY);
+      if (!id) {
+        id = Date.now() + '_' + Math.random().toString(36).slice(2);
+        sessionStorage.setItem(STORAGE_KEY, id);
+      }
+      return id;
+    } catch {
+      // sessionStorage 不可用时降级
+      return Date.now() + '_' + Math.random().toString(36).slice(2);
+    }
+  })();
 
   // ==================== 工具函数 ====================
 
@@ -94,6 +117,81 @@
         subtree: true,
       });
     });
+  }
+
+  /**
+   * 尝试获取跨 Tab 分布式锁（带二次确认，缓解 TOCTOU 竞态）
+   * @param {string} lockKey - 锁的 GM 存储键名
+   * @param {number} ttl - 锁过期时间（毫秒）
+   * @returns {Promise<boolean>} 是否成功获取锁
+   */
+  async function tryAcquireLock(lockKey, ttl) {
+    const now = Date.now();
+    const raw = GM_getValue(lockKey, '');
+
+    if (raw) {
+      try {
+        const lock = JSON.parse(raw);
+        if (lock.tabId === TAB_ID) {
+          GM_setValue(lockKey, JSON.stringify({ tabId: TAB_ID, timestamp: now }));
+          log(`锁续约成功 [${lockKey}]`);
+          return true;
+        }
+        if (now - lock.timestamp < ttl) {
+          log(`锁已被其他 Tab 持有，跳过 [${lockKey}] (holder: ${lock.tabId})`);
+          return false;
+        }
+        log(`锁已过期，强制获取 [${lockKey}] (expired holder: ${lock.tabId})`);
+      } catch (e) {
+        log(`锁数据异常，清除并重新获取 [${lockKey}]:`, e.message);
+      }
+    }
+
+    // 写入锁
+    GM_setValue(lockKey, JSON.stringify({ tabId: TAB_ID, timestamp: now }));
+
+    // 二次确认：等待短暂随机时间后验证锁是否仍属于自己
+    await sleep(50 + Math.random() * 50);
+
+    const verifyRaw = GM_getValue(lockKey, '');
+    try {
+      const verifyLock = JSON.parse(verifyRaw);
+      if (verifyLock.tabId === TAB_ID) {
+        log(`获取锁成功 [${lockKey}], tabId: ${TAB_ID}`);
+        return true;
+      }
+      log(`锁竞争失败，其他 Tab 抢先获取 [${lockKey}] (winner: ${verifyLock.tabId})`);
+      return false;
+    } catch {
+      log(`锁验证异常 [${lockKey}]`);
+      return false;
+    }
+  }
+
+  /**
+   * 释放锁
+   * @param {string} lockKey - 锁的 GM 存储键名
+   * @param {number} [ttl] - 锁过期时间，用于判断是否可以强制释放过期锁
+   */
+  function releaseLock(lockKey, ttl = LOGIN_FLOW_TTL) {
+    const raw = GM_getValue(lockKey, '');
+    if (!raw) return;
+
+    try {
+      const lock = JSON.parse(raw);
+      if (lock.tabId === TAB_ID) {
+        GM_setValue(lockKey, '');
+        log(`释放自己的锁成功 [${lockKey}]`);
+      } else if (Date.now() - lock.timestamp > ttl) {
+        GM_setValue(lockKey, '');
+        log(`释放过期锁成功 [${lockKey}] (expired holder: ${lock.tabId})`);
+      } else {
+        log(`锁属于其他 Tab 且未过期，不释放 [${lockKey}] (holder: ${lock.tabId})`);
+      }
+    } catch (e) {
+      GM_setValue(lockKey, '');
+      log(`锁数据异常，已清除 [${lockKey}]:`, e.message);
+    }
   }
 
   // ==================== 配置管理 ====================
@@ -391,6 +489,13 @@
   // 阶段 1：互选官网首页 - 点击广告主登录
   async function handleHuxuanHome() {
     if (!pathname.startsWith('/trade/free')) return;
+
+    // 流程起点：竞争登录流程锁
+    if (!(await tryAcquireLock(LOCK_KEYS.LOGIN_FLOW, LOGIN_FLOW_TTL))) {
+      log('其他 Tab 正在执行登录流程，本 Tab 跳过');
+      return;
+    }
+
     log('检测到互选首页，准备点击广告主登录...');
 
     try {
@@ -408,6 +513,13 @@
   // 阶段 2：SSO 登录页 - 点击 QQ 登录 Tab
   async function handleSSOLogin() {
     if (!pathname.startsWith('/login/hub')) return;
+
+    // 中间阶段：续约/获取登录流程锁
+    if (!(await tryAcquireLock(LOCK_KEYS.LOGIN_FLOW, LOGIN_FLOW_TTL))) {
+      log('登录流程被其他 Tab 占用，本 Tab 跳过 SSO 处理');
+      return;
+    }
+
     log('检测到 SSO 登录页，准备点击 QQ 登录 Tab...');
 
     try {
@@ -422,6 +534,12 @@
 
   // 阶段 3：QQ 登录 iframe - 密码登录
   async function handleQQLogin() {
+    // 中间阶段：续约/获取登录流程锁
+    if (!(await tryAcquireLock(LOCK_KEYS.LOGIN_FLOW, LOGIN_FLOW_TTL))) {
+      log('登录流程被其他 Tab 占用，本 Tab 跳过 QQ 登录');
+      return;
+    }
+
     const config = getConfig();
     log('检测到 QQ 登录页，准备填充密码登录...');
 
@@ -470,6 +588,13 @@
   // 阶段 4：账户选择页 - 搜索并登录
   async function handleAccountSelect() {
     if (!pathname.startsWith('/login/sportal')) return;
+
+    // 中间阶段：续约/获取登录流程锁
+    if (!(await tryAcquireLock(LOCK_KEYS.LOGIN_FLOW, LOGIN_FLOW_TTL))) {
+      log('登录流程被其他 Tab 占用，本 Tab 跳过账户选择');
+      return;
+    }
+
     const config = getConfig();
     log('检测到账户选择页，准备搜索账户 ID:', config.accountId);
 
@@ -541,16 +666,23 @@
     }
 
     const intervalMs = config.checkInterval * 60 * 1000;
+    const autoCheckTTL = Math.max(intervalMs * 0.8, 30000);
 
     log(`定时检测已启动，间隔 ${config.checkInterval} 分钟`);
 
-    setInterval(() => {
+    setInterval(async () => {
       if (isLoggedIn()) {
         log('当前已登录，无需操作');
         return;
       }
 
       if (isHuxuanDomain()) {
+        // 多 Tab 竞争：只允许一个 Tab 触发刷新
+        if (!(await tryAcquireLock(LOCK_KEYS.AUTO_CHECK, autoCheckTTL))) {
+          log('其他 Tab 已触发定时检测，本 Tab 跳过');
+          return;
+        }
+
         log('检测到未登录，刷新页面触发自动登录...');
         window.location.href = `https://${hostname}/trade/free/index`;
       }
@@ -575,11 +707,12 @@
       return;
     }
 
-    log('脚本启动，当前页面:', href);
+    log('脚本启动，当前页面:', href, '| tabId:', TAB_ID);
 
-    // 已登录则启动定时检测
+    // 已登录则释放登录锁并启动定时检测
     if (isLoggedIn()) {
       log('当前已登录');
+      releaseLock(LOCK_KEYS.LOGIN_FLOW);
       setupAutoCheck();
       return;
     }
