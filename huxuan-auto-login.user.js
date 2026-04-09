@@ -2,7 +2,7 @@
 // @name         互选官网自动登录
 // @namespace    https://huxuan.qq.com/
 // @icon         https://file.daihuo.qq.com/fe_free_trade/favicon.png
-// @version      1.0.8
+// @version      1.0.9
 // @description  自动完成互选官网的 QQ 密码登录流程，支持配置账号、密码和目标账户 ID
 // @author       Huxuan AutoLogin
 // @homepageURL  https://github.com/xiaowulang-turbo/Huxuan-AutoLogin
@@ -42,20 +42,18 @@
 
   const LOGIN_FLOW_TTL = 2 * 60 * 1000; // 登录流程锁过期时间：2 分钟
 
-  // 使用 sessionStorage 持久化 Tab ID，确保同一 Tab 跨页面跳转时 ID 不变
+  // window.name 跨 origin 导航时保持不变，是浏览器中唯一具备此特性的存储
   const TAB_ID = (() => {
-    const STORAGE_KEY = 'huxuan_autoLogin_tabId';
-    try {
-      let id = sessionStorage.getItem(STORAGE_KEY);
-      if (!id) {
-        id = Date.now() + '_' + Math.random().toString(36).slice(2);
-        sessionStorage.setItem(STORAGE_KEY, id);
-      }
-      return id;
-    } catch {
-      // sessionStorage 不可用时降级
-      return Date.now() + '_' + Math.random().toString(36).slice(2);
+    const MARKER = '[huxuan_tabId:';
+    const wn = window.name || '';
+    const start = wn.indexOf(MARKER);
+    if (start !== -1) {
+      const end = wn.indexOf(']', start);
+      if (end !== -1) return wn.slice(start + MARKER.length, end);
     }
+    const id = Date.now() + '_' + Math.random().toString(36).slice(2);
+    window.name = wn + MARKER + id + ']';
+    return id;
   })();
 
   // ==================== 工具函数 ====================
@@ -191,6 +189,17 @@
     } catch (e) {
       GM_setValue(lockKey, '');
       log(`锁数据异常，已清除 [${lockKey}]:`, e.message);
+    }
+  }
+
+  /** 只读检查锁是否处于活跃状态（供 iframe 上下文使用，不写入、不竞争） */
+  function isFlowActive(lockKey, ttl) {
+    const raw = GM_getValue(lockKey, '');
+    if (!raw) return false;
+    try {
+      return Date.now() - JSON.parse(raw).timestamp < ttl;
+    } catch {
+      return false;
     }
   }
 
@@ -534,8 +543,13 @@
 
   // 阶段 3：QQ 登录 iframe - 密码登录
   async function handleQQLogin() {
-    // 中间阶段：续约/获取登录流程锁
-    if (!(await tryAcquireLock(LOCK_KEYS.LOGIN_FLOW, LOGIN_FLOW_TTL))) {
+    const inIframe = window.self !== window.top;
+    if (inIframe) {
+      if (!isFlowActive(LOCK_KEYS.LOGIN_FLOW, LOGIN_FLOW_TTL)) {
+        log('无活跃登录流程，iframe 跳过 QQ 登录');
+        return;
+      }
+    } else if (!(await tryAcquireLock(LOCK_KEYS.LOGIN_FLOW, LOGIN_FLOW_TTL))) {
       log('登录流程被其他 Tab 占用，本 Tab 跳过 QQ 登录');
       return;
     }
